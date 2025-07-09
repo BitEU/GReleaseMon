@@ -311,7 +311,18 @@ void fetch_latest_release(RepoInfo* repo, ReleaseCollection* collection, const c
                        WINHTTP_HEADER_NAME_BY_INDEX, &dwStatusCode, &dwStatusCodeSize, 
                        WINHTTP_NO_HEADER_INDEX);
     
-    if (dwStatusCode != 200) {
+    if (dwStatusCode == 404) { // Not Found
+        // Repo has no releases, create a placeholder
+        Release release = {0};
+        strncpy(release.owner, repo->owner, MAX_REPO_NAME_LENGTH - 1);
+        strncpy(release.repo, repo->repo, MAX_REPO_NAME_LENGTH - 1);
+        strncpy(release.tag_name, "None", MAX_TAG_LENGTH - 1);
+        // Leave other fields blank
+        
+        add_release_to_collection(collection, &release);
+        goto cleanup;
+        
+    } else if (dwStatusCode != 200) {
         fprintf(stderr, "Error: HTTP %lu for %s/%s\n", 
                 dwStatusCode, repo->owner, repo->repo);
         goto cleanup;

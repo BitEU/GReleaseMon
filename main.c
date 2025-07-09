@@ -3,6 +3,7 @@
 #include <string.h>
 #include <Windows.h>
 #include <process.h>
+#include <conio.h>
 #include "config.h"
 #include "requests.h"
 #include "ui.h"
@@ -130,13 +131,14 @@ int main(int argc, char* argv[]) {
     
     // Main event loop
     while (g_running) {
-        int ch = getch();
-        
-        // Global key handlers
-        if (ch == 'x' || ch == 'X') {
-            g_running = false;
-            break;
-        }
+        if (_kbhit()) {
+            int ch = getch();
+            
+            // Global key handlers
+            if (ch == 'x' || ch == 'X' || ch == 17) { // 17 = Ctrl+Q
+                g_running = false;
+                break;
+            }
         
         switch (g_ui_state->current_mode) {
             case MODE_TABLE:

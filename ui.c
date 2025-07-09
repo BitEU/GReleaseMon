@@ -151,22 +151,21 @@ void draw_table_row(UIState* state, int row, Release* release, bool selected) {
     memset(line, 0, sizeof(line)); // Clear the buffer
     WORD color = selected ? CONSOLE_COLOR_SELECTED : CONSOLE_COLOR_NORMAL;
     
-    // Determine color based on release age
-    if (!selected) {
-        if (strstr(release->time_difference, "h ago")) {
-            color = CONSOLE_COLOR_FRESH;
-        } else if (strstr(release->time_difference, "1d ago")) {
-            color = CONSOLE_COLOR_DAY_OLD;
-        }
-    }
+    
     
     // Format: Owner/Repo | Tag | Time | Prerelease | Windows Assets
     char repo_full[64];
     snprintf(repo_full, sizeof(repo_full), "%s/%s", release->owner, release->repo);
-    snprintf(line, sizeof(line), "%-20s | %-15s | %-10s | %-4s | %s",
-             repo_full, release->tag_name, release->time_difference,
-             release->prerelease ? "Pre" : "",
-             release->has_windows_assets ? "Yes" : "No");
+
+    if (strcmp(release->tag_name, "None") == 0) {
+        snprintf(line, sizeof(line), "%-20s | %-15s | %-10s | %-4s | %s",
+                 repo_full, "", "", "None", "");
+    } else {
+        snprintf(line, sizeof(line), "%-20s | %-15s | %-10s | %-4s | %s",
+                 repo_full, release->tag_name, release->time_difference,
+                 release->prerelease ? "Pre" : "",
+                 release->has_windows_assets ? "Yes" : "No");
+    }
     
     // Truncate if too long
     if (strlen(line) > state->console_width - 2) {
