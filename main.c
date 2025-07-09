@@ -21,8 +21,10 @@ BOOL WINAPI console_handler(DWORD dwCtrlType) {
         case CTRL_C_EVENT:
         case CTRL_BREAK_EVENT:
         case CTRL_CLOSE_EVENT:
-            g_running = false;
-            return TRUE;
+            // Restore console and exit immediately
+            cleanup_ui();
+            ExitProcess(0);
+            return TRUE; // Unreachable
         default:
             return FALSE;
     }
@@ -139,47 +141,48 @@ int main(int argc, char* argv[]) {
                 g_running = false;
                 break;
             }
-        
-        switch (g_ui_state->current_mode) {
-            case MODE_TABLE:
-                handle_table_input(g_ui_state, ch);
-                
-                // Check if we need to show release page
-                if (g_ui_state->current_mode == MODE_RELEASE_PAGE) {
-                    EnterCriticalSection(&releases->mutex);
-                    if (g_ui_state->selected_row > 0 && 
-                        g_ui_state->selected_row <= releases->count) {
-                        Release* selected = &releases->releases[g_ui_state->selected_row - 1];
-                        
-                        // Clean up old release page
-                        if (g_current_release_page) {
-                            free_release_page(g_current_release_page);
-                        }
-                        
-                        // Create new release page
-                        g_current_release_page = create_release_page(selected);
-                        if (g_current_release_page) {
-                            display_release_page(g_current_release_page, g_ui_state);
-                        } else {
-                            g_ui_state->current_mode = MODE_TABLE;
-                        }
-                    }
-                    LeaveCriticalSection(&releases->mutex);
-                }
-                break;
-                
-            case MODE_RELEASE_PAGE:
-                if (g_current_release_page) {
-                    handle_release_input(g_current_release_page, g_ui_state, ch);
+            
+            switch (g_ui_state->current_mode) {
+                case MODE_TABLE:
+                    handle_table_input(g_ui_state, ch);
                     
-                    // Check if we need to go back to table
-                    if (g_ui_state->current_mode == MODE_TABLE) {
-                        free_release_page(g_current_release_page);
-                        g_current_release_page = NULL;
-                        update_display(g_ui_state);
+                    // Check if we need to show release page
+                    if (g_ui_state->current_mode == MODE_RELEASE_PAGE) {
+                        EnterCriticalSection(&releases->mutex);
+                        if (g_ui_state->selected_row > 0 &&
+                            g_ui_state->selected_row <= releases->count) {
+                            Release* selected = &releases->releases[g_ui_state->selected_row - 1];
+                            
+                            // Clean up old release page
+                            if (g_current_release_page) {
+                                free_release_page(g_current_release_page);
+                            }
+                            
+                            // Create new release page
+                            g_current_release_page = create_release_page(selected);
+                            if (g_current_release_page) {
+                                display_release_page(g_current_release_page, g_ui_state);
+                            } else {
+                                g_ui_state->current_mode = MODE_TABLE;
+                            }
+                        }
+                        LeaveCriticalSection(&releases->mutex);
                     }
-                }
-                break;
+                    break;
+                    
+                case MODE_RELEASE_PAGE:
+                    if (g_current_release_page) {
+                        handle_release_input(g_current_release_page, g_ui_state, ch);
+                        
+                        // Check if we need to go back to table
+                        if (g_ui_state->current_mode == MODE_TABLE) {
+                            free_release_page(g_current_release_page);
+                            g_current_release_page = NULL;
+                            update_display(g_ui_state);
+                        }
+                    }
+                    break;
+            }
         }
         
         // Small delay to prevent high CPU usage

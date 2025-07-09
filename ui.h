@@ -13,6 +13,13 @@
 #define CONSOLE_COLOR_DAY_OLD   (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY)
 #define CONSOLE_COLOR_ERROR     (FOREGROUND_RED | FOREGROUND_INTENSITY)
 
+// Key codes
+#define KEY_UP      72
+#define KEY_DOWN    80
+#define KEY_ENTER   13
+#define KEY_ESC     27
+#define KEY_CTRL_Q  17
+
 // UI modes
 typedef enum {
     MODE_TABLE,

@@ -209,7 +209,12 @@ void draw_table(UIState* state) {
 }
 
 void update_display(UIState* state) {
-    clear_console(state);
+    static UIMode last_mode = -1;
+
+    if (state->current_mode != last_mode) {
+        clear_console(state);
+        last_mode = state->current_mode;
+    }
     
     switch (state->current_mode) {
         case MODE_TABLE:
@@ -241,8 +246,11 @@ void set_loading_message(UIState* state, int row, const char* owner, const char*
 }
 
 void handle_table_input(UIState* state, int ch) {
+    int previous_selected_row = state->selected_row;
+    int previous_table_start_row = state->table_start_row;
+
     switch (ch) {
-        case 72: // Up arrow (Windows)
+        case KEY_UP: // Up arrow (Windows)
         case 'k':
             if (state->selected_row > 1) {
                 state->selected_row--;
@@ -252,7 +260,7 @@ void handle_table_input(UIState* state, int ch) {
             }
             break;
             
-        case 80: // Down arrow (Windows)
+        case KEY_DOWN: // Down arrow (Windows)
         case 'j':
             if (state->selected_row < state->total_rows) {
                 state->selected_row++;
@@ -262,14 +270,40 @@ void handle_table_input(UIState* state, int ch) {
             }
             break;
             
-        case 13: // Enter
+        case KEY_ENTER: // Enter
             if (state->selected_row > 0 && state->selected_row <= state->total_rows) {
                 state->current_mode = MODE_RELEASE_PAGE;
             }
             break;
     }
     
-    update_display(state);
+    if (state->current_mode == MODE_TABLE) { // Only update display if still in table mode
+        if (previous_table_start_row != state->table_start_row) {
+            // Table scrolled, redraw entire table
+            draw_table(state);
+        } else if (previous_selected_row != state->selected_row) {
+            // Only selection changed, redraw affected rows
+            EnterCriticalSection(&state->releases->mutex);
+            // Redraw previously selected row as unselected
+            if (previous_selected_row > 0 && previous_selected_row <= state->total_rows) {
+                int row_index = previous_selected_row - 1;
+                if (row_index >= state->table_start_row && row_index < state->table_start_row + state->visible_rows) {
+                    draw_table_row(state, row_index - state->table_start_row, &state->releases->releases[row_index], false);
+                }
+            }
+            // Redraw newly selected row as selected
+            if (state->selected_row > 0 && state->selected_row <= state->total_rows) {
+                int row_index = state->selected_row - 1;
+                if (row_index >= state->table_start_row && row_index < state->table_start_row + state->visible_rows) {
+                    draw_table_row(state, row_index - state->table_start_row, &state->releases->releases[row_index], true);
+                }
+            }
+            LeaveCriticalSection(&state->releases->mutex);
+        }
+        // Always redraw footer to update help text if mode changes
+        draw_footer(state, MODE_TABLE);
+        fflush(stdout);
+    }
 }
 
 void handle_input(UIState* state) {

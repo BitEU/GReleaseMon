@@ -209,13 +209,13 @@ void display_release_page(ReleasePage* page, UIState* state) {
 void handle_release_input(ReleasePage* page, UIState* state, int ch) {
     switch (ch) {
         case 'j':
-        case 80: // Down arrow (Windows)
+        case KEY_DOWN: // Down arrow (Windows)
             scroll_release_page(page, 1);
             display_release_page(page, state);
             break;
             
         case 'k':
-        case 72: // Up arrow (Windows)
+        case KEY_UP: // Up arrow (Windows)
             scroll_release_page(page, -1);
             display_release_page(page, state);
             break;
@@ -235,7 +235,7 @@ void handle_release_input(ReleasePage* page, UIState* state, int ch) {
             
         case 'b':
         case 'B':
-        case 27: // Escape
+        case KEY_ESC: // Escape
             // Go back to table view
             state->current_mode = MODE_TABLE;
             break;
