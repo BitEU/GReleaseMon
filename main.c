@@ -1,9 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
-#include <signal.h>
-#include <curl/curl.h>
+#include <Windows.h>
+#include <process.h>
 #include "config.h"
 #include "requests.h"
 #include "ui.h"
@@ -15,13 +14,21 @@ static volatile bool g_running = true;
 static UIState* g_ui_state = NULL;
 static ReleasePage* g_current_release_page = NULL;
 
-// Signal handler for clean shutdown
-void signal_handler(int sig) {
-    g_running = false;
+// Console control handler for clean shutdown
+BOOL WINAPI console_handler(DWORD dwCtrlType) {
+    switch (dwCtrlType) {
+        case CTRL_C_EVENT:
+        case CTRL_BREAK_EVENT:
+        case CTRL_CLOSE_EVENT:
+            g_running = false;
+            return TRUE;
+        default:
+            return FALSE;
+    }
 }
 
 // Thread function for updating the display periodically
-void* update_thread(void* arg) {
+unsigned __stdcall update_thread(void* arg) {
     UIState* state = (UIState*)arg;
     
     while (g_running) {
@@ -31,9 +38,9 @@ void* update_thread(void* arg) {
         if (state->current_mode == MODE_TABLE) {
             // Check if we need to resort
             static int last_count = 0;
-            pthread_mutex_lock(&state->releases->mutex);
+            EnterCriticalSection(&state->releases->mutex);
             int current_count = state->releases->count;
-            pthread_mutex_unlock(&state->releases->mutex);
+            LeaveCriticalSection(&state->releases->mutex);
             
             if (current_count != last_count) {
                 sort_releases_by_date(state->releases);
@@ -43,26 +50,21 @@ void* update_thread(void* arg) {
         }
     }
     
-    return NULL;
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
     ErrorCode error = SUCCESS;
     Config* config = NULL;
     ReleaseCollection* releases = NULL;
-    pthread_t* fetch_threads = NULL;
-    pthread_t update_thread_id;
+    HANDLE* fetch_threads = NULL;
+    HANDLE update_thread_handle;
     FetchThreadData* thread_data = NULL;
     
-    // Set up signal handlers
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    // Set up console control handler
+    SetConsoleCtrlHandler(console_handler, TRUE);
     
-    // Initialize CURL globally
-    if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
-        handle_error(ERROR_CURL_INIT, "Failed to initialize CURL library");
-        return ERROR_CURL_INIT;
-    }
+    // Initialize WinHTTP (no global init needed)
     
     // Load configuration
     char* config_path = get_config_path();
@@ -103,7 +105,7 @@ int main(int argc, char* argv[]) {
     update_display(g_ui_state);
     
     // Allocate memory for threads
-    fetch_threads = calloc(config->repo_count, sizeof(pthread_t));
+    fetch_threads = calloc(config->repo_count, sizeof(HANDLE));
     thread_data = calloc(config->repo_count, sizeof(FetchThreadData));
     if (!fetch_threads || !thread_data) {
         error = ERROR_OUT_OF_MEMORY;
@@ -116,14 +118,15 @@ int main(int argc, char* argv[]) {
         thread_data[i].collection = releases;
         thread_data[i].auth_token = config->pat;
         
-        if (pthread_create(&fetch_threads[i], NULL, fetch_release_thread, &thread_data[i]) != 0) {
+        fetch_threads[i] = (HANDLE)_beginthreadex(NULL, 0, fetch_release_thread, &thread_data[i], 0, NULL);
+        if (fetch_threads[i] == 0) {
             log_message("Failed to create thread for %s/%s", 
                        config->repos[i].owner, config->repos[i].repo);
         }
     }
     
     // Start update thread
-    pthread_create(&update_thread_id, NULL, update_thread, g_ui_state);
+    update_thread_handle = (HANDLE)_beginthreadex(NULL, 0, update_thread, g_ui_state, 0, NULL);
     
     // Main event loop
     while (g_running) {
@@ -141,7 +144,7 @@ int main(int argc, char* argv[]) {
                 
                 // Check if we need to show release page
                 if (g_ui_state->current_mode == MODE_RELEASE_PAGE) {
-                    pthread_mutex_lock(&releases->mutex);
+                    EnterCriticalSection(&releases->mutex);
                     if (g_ui_state->selected_row > 0 && 
                         g_ui_state->selected_row <= releases->count) {
                         Release* selected = &releases->releases[g_ui_state->selected_row - 1];
@@ -159,7 +162,7 @@ int main(int argc, char* argv[]) {
                             g_ui_state->current_mode = MODE_TABLE;
                         }
                     }
-                    pthread_mutex_unlock(&releases->mutex);
+                    LeaveCriticalSection(&releases->mutex);
                 }
                 break;
                 
@@ -181,13 +184,16 @@ int main(int argc, char* argv[]) {
         msleep(10);
     }
     
-    // Cancel update thread
-    pthread_cancel(update_thread_id);
-    pthread_join(update_thread_id, NULL);
+    // Wait for update thread to complete
+    WaitForSingleObject(update_thread_handle, INFINITE);
+    CloseHandle(update_thread_handle);
     
     // Wait for all fetch threads to complete
     for (int i = 0; i < config->repo_count; i++) {
-        pthread_join(fetch_threads[i], NULL);
+        if (fetch_threads[i]) {
+            WaitForSingleObject(fetch_threads[i], INFINITE);
+            CloseHandle(fetch_threads[i]);
+        }
     }
     
 cleanup:
@@ -206,8 +212,7 @@ cleanup:
     if (releases) free_release_collection(releases);
     if (config) free_config(config);
     
-    // Cleanup CURL
-    curl_global_cleanup();
+    // Cleanup WinHTTP (no global cleanup needed)
     
     if (error != SUCCESS) {
         fprintf(stderr, "\nPress any key to exit...\n");

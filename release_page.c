@@ -14,19 +14,14 @@ ReleasePage* create_release_page(Release* release) {
     page->release = release;
     page->scroll_offset = 0;
     
-    int max_y, max_x;
-    getmaxyx(stdscr, max_y, max_x);
-    
-    // Create window leaving space for header and footer
-    page->window = newwin(max_y - 6, max_x - 4, 4, 2);
-    page->window_height = max_y - 6;
-    page->window_width = max_x - 4;
+    // Use console dimensions (will be set when displaying)
+    page->window_height = 20; // Will be updated when displaying
+    page->window_width = 80;  // Will be updated when displaying
     
     // Initialize lines array
     page->line_capacity = INITIAL_LINE_CAPACITY;
     page->lines = calloc(page->line_capacity, sizeof(char*));
     if (!page->lines) {
-        delwin(page->window);
         free(page);
         return NULL;
     }
@@ -47,10 +42,6 @@ void free_release_page(ReleasePage* page) {
             }
         }
         free(page->lines);
-    }
-    
-    if (page->window) {
-        delwin(page->window);
     }
     
     free(page);
@@ -158,8 +149,10 @@ void parse_release_body(ReleasePage* page, const char* body) {
     free(body_copy);
 }
 
-void draw_release_content(ReleasePage* page) {
-    werase(page->window);
+void draw_release_content(ReleasePage* page, UIState* state) {
+    // Update window dimensions from console state
+    page->window_width = state->console_width - 4;
+    page->window_height = state->console_height - 6;
     
     int visible_lines = page->window_height - 2;  // Account for borders
     int end_line = page->scroll_offset + visible_lines;
@@ -167,37 +160,29 @@ void draw_release_content(ReleasePage* page) {
         end_line = page->line_count;
     }
     
-    int y = 1;
+    int y = 4;  // Start below header
     for (int i = page->scroll_offset; i < end_line; i++) {
         // Simple color coding for headers
         if (strncmp(page->lines[i], "Owner:", 6) == 0 ||
             strncmp(page->lines[i], "Repo:", 5) == 0 ||
             strncmp(page->lines[i], "Tag:", 4) == 0 ||
             strncmp(page->lines[i], "Created At:", 11) == 0) {
-            wattron(page->window, COLOR_PAIR(COLOR_PAIR_HEADER) | A_BOLD);
-            mvwprintw(page->window, y, 2, "%s", page->lines[i]);
-            wattroff(page->window, COLOR_PAIR(COLOR_PAIR_HEADER) | A_BOLD);
+            print_colored_at(state, 2, y, page->lines[i], CONSOLE_COLOR_HEADER);
         } else if (strncmp(page->lines[i], "---", 3) == 0) {
-            wattron(page->window, A_BOLD);
-            mvwprintw(page->window, y, 2, "%s", page->lines[i]);
-            wattroff(page->window, A_BOLD);
+            print_colored_at(state, 2, y, page->lines[i], CONSOLE_COLOR_HEADER);
         } else {
-            mvwprintw(page->window, y, 2, "%s", page->lines[i]);
+            print_at(state, 2, y, page->lines[i]);
         }
         y++;
     }
     
     // Draw scroll indicators
     if (page->scroll_offset > 0) {
-        mvwprintw(page->window, 0, page->window_width / 2 - 4, " [MORE] ");
+        print_at(state, page->window_width / 2 - 4, 3, " [MORE] ");
     }
     if (end_line < page->line_count) {
-        mvwprintw(page->window, page->window_height - 1, 
-                  page->window_width / 2 - 4, " [MORE] ");
+        print_at(state, page->window_width / 2 - 4, state->console_height - 3, " [MORE] ");
     }
-    
-    box(page->window, 0, 0);
-    wrefresh(page->window);
 }
 
 void scroll_release_page(ReleasePage* page, int direction) {
@@ -215,40 +200,42 @@ void scroll_release_page(ReleasePage* page, int direction) {
 }
 
 void display_release_page(ReleasePage* page, UIState* state) {
-    draw_header(state->header_win, "Release Notes");
-    draw_footer(state->footer_win, MODE_RELEASE_PAGE);
-    draw_release_content(page);
+    clear_console(state);
+    draw_header(state, "Release Notes");
+    draw_footer(state, MODE_RELEASE_PAGE);
+    draw_release_content(page, state);
 }
 
 void handle_release_input(ReleasePage* page, UIState* state, int ch) {
     switch (ch) {
         case 'j':
-        case KEY_DOWN:
+        case 80: // Down arrow (Windows)
             scroll_release_page(page, 1);
-            draw_release_content(page);
+            display_release_page(page, state);
             break;
             
         case 'k':
-        case KEY_UP:
+        case 72: // Up arrow (Windows)
             scroll_release_page(page, -1);
-            draw_release_content(page);
+            display_release_page(page, state);
             break;
             
         case 'G':
             // Go to bottom
             page->scroll_offset = page->line_count - (page->window_height - 2);
             if (page->scroll_offset < 0) page->scroll_offset = 0;
-            draw_release_content(page);
+            display_release_page(page, state);
             break;
             
         case 'g':
             // Go to top
             page->scroll_offset = 0;
-            draw_release_content(page);
+            display_release_page(page, state);
             break;
             
         case 'b':
         case 'B':
+        case 27: // Escape
             // Go back to table view
             state->current_mode = MODE_TABLE;
             break;

@@ -18,8 +18,8 @@ const char* get_error_message(ErrorCode error) {
             return "Failed to parse JSON response";
         case ERROR_OUT_OF_MEMORY:
             return "Out of memory";
-        case ERROR_CURL_INIT:
-            return "Failed to initialize CURL";
+        case ERROR_HTTP_INIT:
+            return "Failed to initialize HTTP";
         case ERROR_UI_INIT:
             return "Failed to initialize UI";
         default:

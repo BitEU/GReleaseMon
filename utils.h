@@ -11,7 +11,7 @@ typedef enum {
     ERROR_NETWORK_FAILURE,
     ERROR_JSON_PARSE,
     ERROR_OUT_OF_MEMORY,
-    ERROR_CURL_INIT,
+    ERROR_HTTP_INIT,
     ERROR_UI_INIT
 } ErrorCode;
 

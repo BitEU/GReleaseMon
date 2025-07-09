@@ -3,7 +3,7 @@
 
 #include <time.h>
 #include <stdbool.h>
-#include <pthread.h>
+#include <Windows.h>
 #include "config.h"
 
 #define MAX_URL_LENGTH 512
@@ -19,13 +19,14 @@ typedef struct {
     bool prerelease;
     time_t created_at;
     char time_difference[MAX_TIME_DIFF_LENGTH];
+    bool has_windows_assets;
 } Release;
 
 typedef struct {
     Release* releases;
     int count;
     int capacity;
-    pthread_mutex_t mutex;
+    CRITICAL_SECTION mutex;
 } ReleaseCollection;
 
 typedef struct {
@@ -34,22 +35,21 @@ typedef struct {
     const char* auth_token;
 } FetchThreadData;
 
-// Memory buffer for curl
-typedef struct {
-    char* memory;
-    size_t size;
-} MemoryStruct;
-
 // Function declarations
 ReleaseCollection* create_release_collection(int initial_capacity);
 void free_release_collection(ReleaseCollection* collection);
 void fetch_latest_release(RepoInfo* repo, ReleaseCollection* collection, const char* auth_token);
-void* fetch_release_thread(void* arg);
+unsigned __stdcall fetch_release_thread(void* arg);
 void calculate_time_diff(Release* release);
 bool add_release_to_collection(ReleaseCollection* collection, Release* release);
 void sort_releases_by_date(ReleaseCollection* collection);
 
-// CURL callback
-size_t write_memory_callback(void* contents, size_t size, size_t nmemb, void* userp);
+// JSON parsing functions
+char* extract_json_string(const char* json, const char* key);
+bool extract_json_bool(const char* json, const char* key);
+
+// Windows assets detection
+bool is_windows_asset(const char* name);
+bool check_windows_assets(const char* json);
 
 #endif // REQUESTS_H

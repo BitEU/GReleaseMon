@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <Windows.h>
-#include "toml.h"
 
 char* get_config_path(void) {
     static char path[MAX_PATH_LENGTH];
@@ -14,15 +13,16 @@ char* get_config_path(void) {
         return NULL;
     }
     
-    snprintf(path, sizeof(path), "%s\\.config\\nodebro\\config", userprofile);
+    snprintf(path, sizeof(path), "%s\\.config\\nodebro\\config.txt", userprofile);
     return path;
 }
 
 Config* load_config(const char* path) {
     FILE* fp;
-    toml_table_t* conf;
-    toml_array_t* repos_array;
-    char errbuf[256];
+    char line[1024];
+    char key[256];
+    char value[768];
+    int repo_count = 0;
     
     Config* config = calloc(1, sizeof(Config));
     if (!config) {
@@ -38,81 +38,96 @@ Config* load_config(const char* path) {
         return NULL;
     }
     
-    // Parse TOML
-    conf = toml_parse_file(fp, errbuf, sizeof(errbuf));
-    fclose(fp);
+    // First pass: count repositories
+    while (fgets(line, sizeof(line), fp)) {
+        // Skip empty lines and comments
+        if (line[0] == '\n' || line[0] == '#' || line[0] == '\0') continue;
+        
+        // Remove newline
+        line[strcspn(line, "\n")] = '\0';
+        
+        // Parse key=value format
+        if (sscanf(line, "%255[^=]=%767[^\n]", key, value) == 2) {
+            // Remove leading/trailing whitespace from key
+            char* key_start = key;
+            while (*key_start == ' ' || *key_start == '\t') key_start++;
+            char* key_end = key_start + strlen(key_start) - 1;
+            while (key_end > key_start && (*key_end == ' ' || *key_end == '\t')) *key_end-- = '\0';
+            
+            if (strncmp(key_start, "repo", 4) == 0) {
+                repo_count++;
+            }
+        }
+    }
     
-    if (!conf) {
-        fprintf(stderr, "Error: Cannot parse config file: %s\n", errbuf);
+    if (repo_count == 0) {
+        fprintf(stderr, "Error: No repositories found in config\n");
+        fclose(fp);
         free(config);
         return NULL;
     }
     
-    // Get PAT token
-    toml_datum_t pat = toml_string_in(conf, "pat");
-    if (!pat.ok) {
-        fprintf(stderr, "Error: Missing 'pat' in config file\n");
-        toml_free(conf);
-        free(config);
-        return NULL;
-    }
-    
-    strncpy(config->pat, pat.u.s, MAX_TOKEN_LENGTH - 1);
-    config->pat[MAX_TOKEN_LENGTH - 1] = '\0';
-    free(pat.u.s);
-    
-    // Get repos array
-    repos_array = toml_array_in(conf, "repos");
-    if (!repos_array) {
-        fprintf(stderr, "Error: Missing 'repos' array in config file\n");
-        toml_free(conf);
-        free(config);
-        return NULL;
-    }
-    
-    int repo_count = toml_array_nelem(repos_array);
-    config->repo_count = repo_count;
-    config->repo_capacity = repo_count;
+    // Allocate memory for repos
     config->repos = calloc(repo_count, sizeof(RepoInfo));
-    
     if (!config->repos) {
         fprintf(stderr, "Error: Failed to allocate memory for repos\n");
-        toml_free(conf);
+        fclose(fp);
         free(config);
         return NULL;
     }
     
-    // Parse each repo
-    for (int i = 0; i < repo_count; i++) {
-        toml_table_t* repo_table = toml_table_at(repos_array, i);
-        if (!repo_table) {
-            fprintf(stderr, "Error: Invalid repo entry at index %d\n", i);
-            continue;
+    config->repo_capacity = repo_count;
+    
+    // Second pass: parse configuration
+    rewind(fp);
+    int current_repo = 0;
+    
+    while (fgets(line, sizeof(line), fp)) {
+        // Skip empty lines and comments
+        if (line[0] == '\n' || line[0] == '#' || line[0] == '\0') continue;
+        
+        // Remove newline
+        line[strcspn(line, "\n")] = '\0';
+        
+        // Parse key=value format
+        if (sscanf(line, "%255[^=]=%767[^\n]", key, value) == 2) {
+            // Remove leading/trailing whitespace from key
+            char* key_start = key;
+            while (*key_start == ' ' || *key_start == '\t') key_start++;
+            char* key_end = key_start + strlen(key_start) - 1;
+            while (key_end > key_start && (*key_end == ' ' || *key_end == '\t')) *key_end-- = '\0';
+            
+            // Remove leading/trailing whitespace from value
+            char* value_start = value;
+            while (*value_start == ' ' || *value_start == '\t') value_start++;
+            char* value_end = value_start + strlen(value_start) - 1;
+            while (value_end > value_start && (*value_end == ' ' || *value_end == '\t')) *value_end-- = '\0';
+            
+            if (strcmp(key_start, "pat") == 0) {
+                strncpy(config->pat, value_start, MAX_TOKEN_LENGTH - 1);
+                config->pat[MAX_TOKEN_LENGTH - 1] = '\0';
+            } else if (strncmp(key_start, "repo", 4) == 0 && current_repo < repo_count) {
+                // Format: repo1=owner/repo or repo_1=owner/repo
+                char* slash = strchr(value_start, '/');
+                if (slash) {
+                    *slash = '\0';
+                    strncpy(config->repos[current_repo].owner, value_start, MAX_REPO_NAME_LENGTH - 1);
+                    strncpy(config->repos[current_repo].repo, slash + 1, MAX_REPO_NAME_LENGTH - 1);
+                    config->repos[current_repo].owner[MAX_REPO_NAME_LENGTH - 1] = '\0';
+                    config->repos[current_repo].repo[MAX_REPO_NAME_LENGTH - 1] = '\0';
+                    
+                    printf("Loading Config: Owner: %s, Repo: %s\n", 
+                           config->repos[current_repo].owner, config->repos[current_repo].repo);
+                    current_repo++;
+                } else {
+                    fprintf(stderr, "Error: Invalid repo format: %s (expected owner/repo)\n", value_start);
+                }
+            }
         }
-        
-        toml_datum_t owner = toml_string_in(repo_table, "Owner");
-        toml_datum_t repo = toml_string_in(repo_table, "Repo");
-        
-        if (!owner.ok || !repo.ok) {
-            fprintf(stderr, "Error: Missing Owner or Repo in config at index %d\n", i);
-            if (owner.ok) free(owner.u.s);
-            if (repo.ok) free(repo.u.s);
-            continue;
-        }
-        
-        strncpy(config->repos[i].owner, owner.u.s, MAX_REPO_NAME_LENGTH - 1);
-        strncpy(config->repos[i].repo, repo.u.s, MAX_REPO_NAME_LENGTH - 1);
-        config->repos[i].owner[MAX_REPO_NAME_LENGTH - 1] = '\0';
-        config->repos[i].repo[MAX_REPO_NAME_LENGTH - 1] = '\0';
-        
-        free(owner.u.s);
-        free(repo.u.s);
-        
-        printf("Loading Config: Owner: %s, Repo: %s\n", 
-               config->repos[i].owner, config->repos[i].repo);
     }
     
-    toml_free(conf);
+    config->repo_count = current_repo;
+    fclose(fp);
     return config;
 }
 

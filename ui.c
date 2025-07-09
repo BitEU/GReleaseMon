@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <Windows.h>
-#include <regex.h>
+#include <conio.h>
 
 void setup_windows_console(void) {
     // Enable UTF-8 support
@@ -24,281 +24,253 @@ void setup_windows_console(void) {
 void init_ui(void) {
     setup_windows_console();
     
-    initscr();
-    cbreak();
-    noecho();
-    keypad(stdscr, TRUE);
-    curs_set(0);  // Hide cursor
+    // Hide cursor
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_CURSOR_INFO cursorInfo;
+    GetConsoleCursorInfo(hOut, &cursorInfo);
+    cursorInfo.bVisible = FALSE;
+    SetConsoleCursorInfo(hOut, &cursorInfo);
     
-    if (has_colors()) {
-        setup_colors();
-    }
-    
-    clear();
-    refresh();
+    // Clear screen
+    system("cls");
 }
 
 void cleanup_ui(void) {
-    endwin();
+    // Show cursor
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_CURSOR_INFO cursorInfo;
+    GetConsoleCursorInfo(hOut, &cursorInfo);
+    cursorInfo.bVisible = TRUE;
+    SetConsoleCursorInfo(hOut, &cursorInfo);
+    
+    // Reset colors
+    SetConsoleTextAttribute(hOut, CONSOLE_COLOR_NORMAL);
 }
 
 void setup_colors(void) {
-    start_color();
-    
-    // Define color pairs
-    init_pair(COLOR_PAIR_NORMAL, COLOR_WHITE, COLOR_BLACK);
-    init_pair(COLOR_PAIR_HEADER, COLOR_GREEN, COLOR_BLACK);
-    init_pair(COLOR_PAIR_SELECTED, COLOR_BLACK, COLOR_CYAN);
-    init_pair(COLOR_PAIR_FRESH, COLOR_GREEN, COLOR_BLACK);
-    init_pair(COLOR_PAIR_DAY_OLD, COLOR_YELLOW, COLOR_BLACK);
-    init_pair(COLOR_PAIR_ERROR, COLOR_RED, COLOR_BLACK);
+    // Colors are handled per-print in Windows Console API
+    // No global color initialization needed
 }
 
 UIState* create_ui_state(Config* config, ReleaseCollection* releases) {
     UIState* state = calloc(1, sizeof(UIState));
     if (!state) return NULL;
     
-    state->config = config;
-    state->releases = releases;
-    state->selected_row = 1;  // Start at first data row (skip header)
+    state->hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    GetConsoleScreenBufferInfo(state->hConsole, &state->csbi);
+    
+    state->console_width = state->csbi.srWindow.Right - state->csbi.srWindow.Left + 1;
+    state->console_height = state->csbi.srWindow.Bottom - state->csbi.srWindow.Top + 1;
+    
+    state->selected_row = 1;
     state->table_start_row = 0;
+    state->visible_rows = state->console_height - 7; // Leave space for header, table header, and footer
+    state->total_rows = 0;
     state->current_mode = MODE_TABLE;
-    
-    int max_y, max_x;
-    getmaxyx(stdscr, max_y, max_x);
-    
-    // Create windows
-    state->header_win = newwin(3, max_x, 0, 0);
-    state->footer_win = newwin(3, max_x, max_y - 3, 0);
-    state->table_win = newwin(max_y - 6, max_x, 3, 0);
-    
-    state->visible_rows = max_y - 6 - 2;  // Subtract borders
-    state->total_rows = config->repo_count + 1;  // +1 for header
-    
-    // Enable scrolling for table window
-    scrollok(state->table_win, TRUE);
+    state->releases = releases;
+    state->config = config;
     
     return state;
 }
 
 void free_ui_state(UIState* state) {
-    if (!state) return;
-    
-    if (state->header_win) delwin(state->header_win);
-    if (state->table_win) delwin(state->table_win);
-    if (state->footer_win) delwin(state->footer_win);
-    
-    free(state);
+    if (state) {
+        free(state);
+    }
 }
 
-void center_text(WINDOW* win, int row, const char* text) {
-    int max_x = getmaxx(win);
-    int len = strlen(text);
-    int start_x = (max_x - len) / 2;
-    if (start_x < 0) start_x = 0;
-    mvwprintw(win, row, start_x, "%s", text);
+void clear_console(UIState* state) {
+    system("cls");
 }
 
-void draw_header(WINDOW* win, const char* title) {
-    werase(win);
-    box(win, 0, 0);
-    
-    wattron(win, COLOR_PAIR(COLOR_PAIR_HEADER) | A_BOLD);
-    center_text(win, 1, title);
-    wattroff(win, COLOR_PAIR(COLOR_PAIR_HEADER) | A_BOLD);
-    
-    wrefresh(win);
+void set_console_cursor_position(UIState* state, int x, int y) {
+    COORD pos = {x, y};
+    SetConsoleCursorPosition(state->hConsole, pos);
 }
 
-void draw_footer(WINDOW* win, UIMode mode) {
-    werase(win);
-    box(win, 0, 0);
+void set_console_color(UIState* state, WORD color) {
+    SetConsoleTextAttribute(state->hConsole, color);
+}
+
+void print_at(UIState* state, int x, int y, const char* text) {
+    set_console_cursor_position(state, x, y);
+    printf("%s", text);
+}
+
+void print_colored_at(UIState* state, int x, int y, const char* text, WORD color) {
+    set_console_cursor_position(state, x, y);
+    set_console_color(state, color);
+    printf("%s", text);
+    set_console_color(state, CONSOLE_COLOR_NORMAL);
+}
+
+int getch(void) {
+    return _getch();
+}
+
+void draw_header(UIState* state, const char* title) {
+    char header[256];
+    snprintf(header, sizeof(header), "=== %s ===", title);
     
-    const char* help_text;
+    // Calculate center position
+    int center_x = (state->console_width - strlen(header)) / 2;
+    print_colored_at(state, center_x, 0, header, CONSOLE_COLOR_HEADER);
+    
+    // Draw separator line
+    for (int i = 0; i < state->console_width; i++) {
+        print_colored_at(state, i, 1, "-", CONSOLE_COLOR_HEADER);
+    }
+}
+
+void draw_footer(UIState* state, UIMode mode) {
+    int footer_y = state->console_height - 2;
+    
+    // Draw separator line
+    for (int i = 0; i < state->console_width; i++) {
+        print_colored_at(state, i, footer_y, "-", CONSOLE_COLOR_HEADER);
+    }
+    
+    const char* help_text = "";
     switch (mode) {
         case MODE_TABLE:
-            help_text = "(j/↓) Down  (k/↑) Up  (Enter) View  (x) Exit";
+            help_text = "Arrow keys: Navigate | Enter: View release | X: Exit";
             break;
         case MODE_RELEASE_PAGE:
-            help_text = "(j) Scroll Down  (k) Scroll Up  (b) Back  (x) Exit";
+            help_text = "Arrow keys: Scroll | Esc: Back to table | X: Exit";
             break;
         default:
-            help_text = "(x) Exit";
+            help_text = "X: Exit";
+            break;
     }
     
-    center_text(win, 1, help_text);
-    wrefresh(win);
+    print_at(state, 2, footer_y + 1, help_text);
 }
 
-void draw_table_row(WINDOW* win, int row, int col, Release* release, bool selected) {
-    if (selected) {
-        wattron(win, COLOR_PAIR(COLOR_PAIR_SELECTED));
-    }
+void draw_table_row(UIState* state, int row, Release* release, bool selected) {
+    char line[1024];
+    memset(line, 0, sizeof(line)); // Clear the buffer
+    WORD color = selected ? CONSOLE_COLOR_SELECTED : CONSOLE_COLOR_NORMAL;
     
-    // Draw columns with proper spacing
-    mvwprintw(win, row, col + 2, "%-20.20s", release->owner);
-    mvwprintw(win, row, col + 25, "%-25.25s", release->repo);
-    
-    // Format date
-    char date_str[20];
-    struct tm* tm_info = localtime(&release->created_at);
-    strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M", tm_info);
-    mvwprintw(win, row, col + 52, "%-18s", date_str);
-    
-    // Time difference with color
+    // Determine color based on release age
     if (!selected) {
-        regex_t regex_hour, regex_day;
-        regcomp(&regex_hour, "[0-9]+h ago", REG_EXTENDED);
-        regcomp(&regex_day, "[0-9]+d ago", REG_EXTENDED);
-        
-        if (regexec(&regex_hour, release->time_difference, 0, NULL, 0) == 0) {
-            wattron(win, COLOR_PAIR(COLOR_PAIR_FRESH));
-        } else if (regexec(&regex_day, release->time_difference, 0, NULL, 0) == 0) {
-            wattron(win, COLOR_PAIR(COLOR_PAIR_DAY_OLD));
+        if (strstr(release->time_difference, "h ago")) {
+            color = CONSOLE_COLOR_FRESH;
+        } else if (strstr(release->time_difference, "1d ago")) {
+            color = CONSOLE_COLOR_DAY_OLD;
         }
-        
-        regfree(&regex_hour);
-        regfree(&regex_day);
     }
     
-    mvwprintw(win, row, col + 72, "%-12s", release->time_difference);
+    // Format: Owner/Repo | Tag | Time | Prerelease | Windows Assets
+    char repo_full[64];
+    snprintf(repo_full, sizeof(repo_full), "%s/%s", release->owner, release->repo);
+    snprintf(line, sizeof(line), "%-20s | %-15s | %-10s | %-4s | %s",
+             repo_full, release->tag_name, release->time_difference,
+             release->prerelease ? "Pre" : "",
+             release->has_windows_assets ? "Yes" : "No");
     
-    if (!selected) {
-        wattroff(win, COLOR_PAIR(COLOR_PAIR_FRESH));
-        wattroff(win, COLOR_PAIR(COLOR_PAIR_DAY_OLD));
+    // Truncate if too long
+    if (strlen(line) > state->console_width - 2) {
+        line[state->console_width - 2] = '\0';
     }
     
-    // Tag name
-    mvwprintw(win, row, col + 86, "%-20.20s", release->tag_name);
+    // Clear the line first
+    char clear_line[1024];
+    memset(clear_line, ' ', state->console_width - 2);
+    clear_line[state->console_width - 2] = '\0';
+    print_at(state, 1, row + 4, clear_line);
     
-    if (selected) {
-        wattroff(win, COLOR_PAIR(COLOR_PAIR_SELECTED));
-    }
+    // Then print the actual content
+    print_colored_at(state, 1, row + 4, line, color);
 }
 
 void draw_table(UIState* state) {
-    werase(state->table_win);
-    box(state->table_win, 0, 0);
-    
-    int max_y, max_x;
-    getmaxyx(state->table_win, max_y, max_x);
+    EnterCriticalSection(&state->releases->mutex);
     
     // Draw table header
-    wattron(state->table_win, A_BOLD | A_UNDERLINE);
-    mvwprintw(state->table_win, 1, 2, "%-20s %-25s %-18s %-12s %-20s", 
-              "Owner", "Repo", "Created At", "Time Ago", "Tag");
-    wattroff(state->table_win, A_BOLD | A_UNDERLINE);
+    print_colored_at(state, 1, 3, "Repository           | Tag             | Time       | Type | Windows", CONSOLE_COLOR_HEADER);
     
-    // Draw horizontal line after header
-    mvwhline(state->table_win, 2, 1, ACS_HLINE, max_x - 2);
-    
-    pthread_mutex_lock(&state->releases->mutex);
-    
-    // Draw visible rows
-    int display_row = 3;
-    int data_row = 0;
-    
-    for (int i = 0; i < state->releases->count && display_row < max_y - 1; i++) {
-        if (data_row >= state->table_start_row) {
-            bool selected = (data_row + 1 == state->selected_row);
-            draw_table_row(state->table_win, display_row, 0, 
-                         &state->releases->releases[i], selected);
-            display_row++;
-        }
-        data_row++;
+    // Draw releases
+    int visible_count = 0;
+    for (int i = state->table_start_row; i < state->releases->count && visible_count < state->visible_rows; i++) {
+        bool selected = (i + 1 == state->selected_row);
+        draw_table_row(state, visible_count, &state->releases->releases[i], selected);
+        visible_count++;
     }
     
-    // Draw "Loading..." for repos without data yet
-    for (int i = state->releases->count; i < state->config->repo_count && display_row < max_y - 1; i++) {
-        if (data_row >= state->table_start_row) {
-            bool selected = (data_row + 1 == state->selected_row);
-            if (selected) {
-                wattron(state->table_win, COLOR_PAIR(COLOR_PAIR_SELECTED));
-            }
-            
-            mvwprintw(state->table_win, display_row, 2, "%-20.20s", state->config->repos[i].owner);
-            mvwprintw(state->table_win, display_row, 25, "%-25.25s", state->config->repos[i].repo);
-            mvwprintw(state->table_win, display_row, 52, "Fetching...");
-            mvwprintw(state->table_win, display_row, 72, "Calculating...");
-            mvwprintw(state->table_win, display_row, 86, "Fetching...");
-            
-            if (selected) {
-                wattroff(state->table_win, COLOR_PAIR(COLOR_PAIR_SELECTED));
-            }
-            display_row++;
-        }
-        data_row++;
+    // Clear remaining lines
+    for (int i = visible_count; i < state->visible_rows; i++) {
+        char empty_line[512];
+        memset(empty_line, ' ', state->console_width - 2);
+        empty_line[state->console_width - 2] = '\0';
+        print_at(state, 1, i + 5, empty_line);
     }
     
-    pthread_mutex_unlock(&state->releases->mutex);
-    
-    wrefresh(state->table_win);
+    state->total_rows = state->releases->count;
+    LeaveCriticalSection(&state->releases->mutex);
 }
 
 void update_display(UIState* state) {
+    clear_console(state);
+    
     switch (state->current_mode) {
         case MODE_TABLE:
-            draw_header(state->header_win, "GitHub Releases Tracker - Latest Tags");
+            draw_header(state, "GitHub Release Monitor");
             draw_table(state);
-            draw_footer(state->footer_win, MODE_TABLE);
+            draw_footer(state, MODE_TABLE);
             break;
         case MODE_RELEASE_PAGE:
-            // Will be handled by release_page module
+            // Release page display is handled by display_release_page()
+            draw_footer(state, MODE_RELEASE_PAGE);
             break;
-        case MODE_TAG_DROPDOWN:
-            // Future implementation
+        default:
             break;
     }
+    
+    // Force flush
+    fflush(stdout);
+}
+
+void center_text(UIState* state, int row, const char* text) {
+    int center_x = (state->console_width - strlen(text)) / 2;
+    print_at(state, center_x, row, text);
+}
+
+void set_loading_message(UIState* state, int row, const char* owner, const char* repo) {
+    char message[256];
+    snprintf(message, sizeof(message), "Loading %s/%s...", owner, repo);
+    center_text(state, row, message);
 }
 
 void handle_table_input(UIState* state, int ch) {
-    int old_selected = state->selected_row;
-    
     switch (ch) {
+        case 72: // Up arrow (Windows)
+        case 'k':
+            if (state->selected_row > 1) {
+                state->selected_row--;
+                if (state->selected_row <= state->table_start_row) {
+                    state->table_start_row--;
+                }
+            }
+            break;
+            
+        case 80: // Down arrow (Windows)
         case 'j':
-        case KEY_DOWN:
-            if (state->selected_row < state->total_rows - 1) {
+            if (state->selected_row < state->total_rows) {
                 state->selected_row++;
-                
-                // Scroll down if needed
-                if (state->selected_row - state->table_start_row >= state->visible_rows - 3) {
+                if (state->selected_row > state->table_start_row + state->visible_rows) {
                     state->table_start_row++;
                 }
             }
             break;
             
-        case 'k':
-        case KEY_UP:
-            if (state->selected_row > 1) {
-                state->selected_row--;
-                
-                // Scroll up if needed
-                if (state->selected_row <= state->table_start_row + 1) {
-                    state->table_start_row = state->selected_row - 1;
-                    if (state->table_start_row < 0) state->table_start_row = 0;
-                }
-            }
-            break;
-            
-        case '\n':
-        case '\r':
-        case KEY_ENTER:
-            // Switch to release page mode
-            if (state->selected_row > 0 && state->selected_row <= state->releases->count) {
+        case 13: // Enter
+            if (state->selected_row > 0 && state->selected_row <= state->total_rows) {
                 state->current_mode = MODE_RELEASE_PAGE;
             }
             break;
-            
-        case 'x':
-        case 'X':
-            // Exit will be handled in main loop
-            break;
     }
     
-    // Redraw if selection changed
-    if (old_selected != state->selected_row) {
-        draw_table(state);
-    }
+    update_display(state);
 }
 
 void handle_input(UIState* state) {
@@ -309,19 +281,13 @@ void handle_input(UIState* state) {
             handle_table_input(state, ch);
             break;
         case MODE_RELEASE_PAGE:
-            // Will be handled by release_page module
+            // Handle release page input
+            if (ch == 27) { // Escape
+                state->current_mode = MODE_TABLE;
+                update_display(state);
+            }
             break;
-        case MODE_TAG_DROPDOWN:
-            // Future implementation
+        default:
             break;
     }
-}
-
-void set_loading_message(UIState* state, int row, const char* owner, const char* repo) {
-    pthread_mutex_lock(&state->releases->mutex);
-    
-    mvwprintw(state->table_win, row + 3, 2, "%-20.20s %-25.25s Fetching...", owner, repo);
-    wrefresh(state->table_win);
-    
-    pthread_mutex_unlock(&state->releases->mutex);
 }
