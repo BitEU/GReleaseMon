@@ -1,0 +1,24 @@
+# Repositories to monitor (format: owner/repo)
+BitEU/WinSpread
+microsoft/edit
+BitEU/wcal
+gokcehan/lf
+adamyg/mcwin32
+dundee/gdu
+voidtools/es
+gsass1/NTop
+imsnif/bandwhich
+BitEU/WinCVol
+BitEU/terminedia-paint
+ulyssa/iamb
+pimalaya/himalaya
+guyfedwards/nom
+BitEU/windjack
+BitEU/Asteroids
+wojciech-graj/doom-ascii
+BitEU/TetRizz
+BitEU/TerminalSudoku
+BitEU/PacMan
+BitEU/batch-chess
+max-niederman/ttyper
+BitEU/WinWhen

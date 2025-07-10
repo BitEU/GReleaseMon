@@ -39,6 +39,8 @@ char* get_config_path(void) {
 Config* load_config(const char* path) {
     FILE* fp;
     char line[1024];
+    char api_path[MAX_PATH_LENGTH];
+    FILE* api_fp = NULL;
     
     Config* config = calloc(1, sizeof(Config));
     if (!config) {
@@ -62,7 +64,36 @@ Config* load_config(const char* path) {
         free(config);
         return NULL;
     }
-    
+
+    // Load API key from api.txt in the same directory as config.txt
+    strncpy(api_path, path, MAX_PATH_LENGTH - 1);
+    api_path[MAX_PATH_LENGTH - 1] = '\0';
+    char* last_backslash = strrchr(api_path, '\\');
+    if (last_backslash) {
+        *(last_backslash + 1) = '\0';
+        strncat(api_path, "api.txt", MAX_PATH_LENGTH - strlen(api_path) - 1);
+    } else {
+        strncpy(api_path, "api.txt", MAX_PATH_LENGTH - 1);
+        api_path[MAX_PATH_LENGTH - 1] = '\0';
+    }
+    api_fp = fopen(api_path, "r");
+    if (!api_fp) {
+        fprintf(stderr, "Error: Cannot open API key file: %s\n", api_path);
+        fclose(fp);
+        free(config->repos);
+        free(config);
+        return NULL;
+    }
+    while (fgets(line, sizeof(line), api_fp)) {
+        line[strcspn(line, "\n")] = '\0';
+        if (strncmp(line, "pat=", 4) == 0) {
+            strncpy(config->pat, line + 4, MAX_TOKEN_LENGTH - 1);
+            config->pat[MAX_TOKEN_LENGTH - 1] = '\0';
+            break;
+        }
+    }
+    fclose(api_fp);
+
     while (fgets(line, sizeof(line), fp)) {
         // Remove newline
         line[strcspn(line, "\n")] = '\0';
@@ -70,10 +101,9 @@ Config* load_config(const char* path) {
         // Skip empty lines and comments
         if (strlen(line) == 0 || line[0] == '#') continue;
         
-        // Check for PAT token
+        // Remove PAT parsing from config.txt
         if (strncmp(line, "pat=", 4) == 0) {
-            strncpy(config->pat, line + 4, MAX_TOKEN_LENGTH - 1);
-            config->pat[MAX_TOKEN_LENGTH - 1] = '\0';
+            continue;
         } else {
             // Assume it's a repository line (owner/repo)
             char* slash = strchr(line, '/');

@@ -1,6 +1,6 @@
 /.claude
 /.cache
-config.txt
+api.txt
 
 # Prerequisites
 *.d
