@@ -76,6 +76,7 @@ bool is_windows_asset(const char* name) {
     
     // Check for .exe extension
     if (strstr(lower_name, ".exe")) return true;
+    if (strstr(lower_name, ".msi")) return true;
     
     // Check for Windows-related keywords
     if (strstr(lower_name, "windows")) return true;
@@ -245,7 +246,7 @@ void fetch_latest_release(RepoInfo* repo, ReleaseCollection* collection, const c
     BOOL bResults = FALSE;
     
     // Initialize WinHTTP
-    hSession = WinHttpOpen(L"nodebro-c/1.0", 
+    hSession = WinHttpOpen(L"GReleaseMon-c/1.0", 
                           WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                           WINHTTP_NO_PROXY_NAME,
                           WINHTTP_NO_PROXY_BYPASS,
@@ -283,7 +284,7 @@ void fetch_latest_release(RepoInfo* repo, ReleaseCollection* collection, const c
     wchar_t wszHeaders[1024];
     swprintf(wszHeaders, sizeof(wszHeaders)/sizeof(wchar_t), 
              L"Authorization: Bearer %hs\r\n"
-             L"User-Agent: nodebro-c/1.0\r\n"
+             L"User-Agent: GReleaseMon-c/1.0\r\n"
              L"Accept: application/vnd.github.v3+json\r\n",
              auth_token);
     

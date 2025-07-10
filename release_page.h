@@ -15,9 +15,6 @@ typedef struct {
     int window_width;
 } ReleasePage;
 
-// Forward declaration to avoid circular dependency
-struct UIState;
-
 // Function declarations
 ReleasePage* create_release_page(Release* release);
 void free_release_page(ReleasePage* page);

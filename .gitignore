@@ -1,5 +1,6 @@
 /.claude
 /.cache
+config.txt
 
 # Prerequisites
 *.d

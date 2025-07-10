@@ -18,7 +18,7 @@ void setup_windows_console(void) {
     SetConsoleMode(hOut, dwMode);
     
     // Set console title
-    SetConsoleTitle("NodeBro - GitHub Release Tracker");
+    SetConsoleTitle("GReleaseMon - GitHub Release Tracker");
 }
 
 void init_ui(void) {
@@ -80,7 +80,42 @@ void free_ui_state(UIState* state) {
 }
 
 void clear_console(UIState* state) {
-    system("cls");
+    COORD coordScreen = { 0, 0 };    // home for the cursor
+    DWORD cCharsWritten;
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    DWORD dwConSize;
+
+    // Get the number of character cells in the current buffer.
+    if (!GetConsoleScreenBufferInfo(state->hConsole, &csbi)) {
+        return;
+    }
+    dwConSize = csbi.dwSize.X * csbi.dwSize.Y;
+
+    // Fill the entire screen with blanks.
+    if (!FillConsoleOutputCharacter(state->hConsole,        // Handle to console screen buffer
+                                   (TCHAR) ' ',             // Character to write to the buffer
+                                   dwConSize,               // Number of cells to write
+                                   coordScreen,             // Coordinates of first cell
+                                   &cCharsWritten)) {       // Receive number of characters written
+        return;
+    }
+
+    // Get the current text attribute.
+    if (!GetConsoleScreenBufferInfo(state->hConsole, &csbi)) {
+        return;
+    }
+
+    // Fill the entire screen with the current colors.
+    if (!FillConsoleOutputAttribute(state->hConsole,        // Handle to console screen buffer
+                                   csbi.wAttributes,        // Character attributes to use
+                                   dwConSize,               // Number of cells to write
+                                   coordScreen,             // Coordinates of first cell
+                                   &cCharsWritten)) {       // Receive number of characters written
+        return;
+    }
+
+    // Put the cursor at its home coordinates.
+    SetConsoleCursorPosition(state->hConsole, coordScreen);
 }
 
 void set_console_cursor_position(UIState* state, int x, int y) {
@@ -158,10 +193,10 @@ void draw_table_row(UIState* state, int row, Release* release, bool selected) {
     snprintf(repo_full, sizeof(repo_full), "%s/%s", release->owner, release->repo);
 
     if (strcmp(release->tag_name, "None") == 0) {
-        snprintf(line, sizeof(line), "%-20s | %-15s | %-10s | %-4s | %s",
+        snprintf(line, sizeof(line), "%-45s | %-15s | %-10s | %-4s | %s",
                  repo_full, "", "", "None", "");
     } else {
-        snprintf(line, sizeof(line), "%-20s | %-15s | %-10s | %-4s | %s",
+        snprintf(line, sizeof(line), "%-45s | %-15s | %-10s | %-4s | %s",
                  repo_full, release->tag_name, release->time_difference,
                  release->prerelease ? "Pre" : "",
                  release->has_windows_assets ? "Yes" : "No");
@@ -186,7 +221,7 @@ void draw_table(UIState* state) {
     EnterCriticalSection(&state->releases->mutex);
     
     // Draw table header
-    print_colored_at(state, 1, 3, "Repository           | Tag             | Time       | Type | Windows", CONSOLE_COLOR_HEADER);
+    print_colored_at(state, 1, 3, "Repository                                    | Tag             | Time       | Type | Windows", CONSOLE_COLOR_HEADER);
     
     // Draw releases
     int visible_count = 0;
@@ -196,12 +231,20 @@ void draw_table(UIState* state) {
         visible_count++;
     }
     
-    // Clear remaining lines
+    // Clear remaining lines in the table area
     for (int i = visible_count; i < state->visible_rows; i++) {
         char empty_line[512];
         memset(empty_line, ' ', state->console_width - 2);
         empty_line[state->console_width - 2] = '\0';
-        print_at(state, 1, i + 5, empty_line);
+        print_at(state, 1, i + 4, empty_line);
+    }
+
+    // Clear any lines below the table and above the footer
+    for (int i = state->visible_rows + 4; i < state->console_height - 2; i++) {
+        char empty_line[512];
+        memset(empty_line, ' ', state->console_width);
+        empty_line[state->console_width] = '\0';
+        print_at(state, 0, i, empty_line);
     }
     
     state->total_rows = state->releases->count;
