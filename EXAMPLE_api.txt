@@ -1,0 +1,3 @@
+# Personal Access Token (required)
+# Get one from: https://github.com/settings/tokens
+pat=ghp_THISISNOTAVALIDTOKEN
