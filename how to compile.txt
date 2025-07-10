@@ -1,0 +1,1 @@
+cl *.c /link /OUT:GReleaseMon.exe user32.lib
