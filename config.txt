@@ -25,3 +25,4 @@ BitEU/WinWhen
 BitEU/ascii-patrol
 BitEU/VVCard
 BitEU/GReleaseMon
+BitEU/ExecMech
