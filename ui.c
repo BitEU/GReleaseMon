@@ -193,10 +193,10 @@ void draw_table_row(UIState* state, int row, Release* release, bool selected) {
     snprintf(repo_full, sizeof(repo_full), "%s/%s", release->owner, release->repo);
 
     if (strcmp(release->tag_name, "None") == 0) {
-        snprintf(line, sizeof(line), "%-45s | %-15s | %-10s | %-4s | %s",
+        snprintf(line, sizeof(line), "%-45s | %-15s | %-14s | %-4s | %s",
                  repo_full, "", "", "None", "");
     } else {
-        snprintf(line, sizeof(line), "%-45s | %-15s | %-10s | %-4s | %s",
+        snprintf(line, sizeof(line), "%-45s | %-15s | %-14s | %-4s | %s",
                  repo_full, release->tag_name, release->time_difference,
                  release->prerelease ? "Pre" : "",
                  release->has_windows_assets ? "Yes" : "No");
@@ -221,7 +221,7 @@ void draw_table(UIState* state) {
     EnterCriticalSection(&state->releases->mutex);
     
     // Draw table header
-    print_colored_at(state, 1, 3, "Repository                                    | Tag             | Time       | Type | Windows", CONSOLE_COLOR_HEADER);
+    print_colored_at(state, 1, 3, "Repository                                    | Tag             | Time           | Type | Windows", CONSOLE_COLOR_HEADER);
     
     // Draw releases
     int visible_count = 0;

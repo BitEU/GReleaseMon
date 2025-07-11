@@ -1,3 +1,12 @@
+#ifdef _WIN32
+#include <time.h>
+#ifndef _mkgmtime
+// Provide prototype for _mkgmtime if not included
+time_t _mkgmtime(struct tm *tm);
+#endif
+#else
+#include <time.h>
+#endif
 #ifndef REQUESTS_H
 #define REQUESTS_H
 

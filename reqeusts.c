@@ -201,13 +201,42 @@ void free_release_collection(ReleaseCollection* collection) {
 void calculate_time_diff(Release* release) {
     time_t current_time = time(NULL);
     double diff_seconds = difftime(current_time, release->created_at);
-    int hours = (int)(diff_seconds / 3600);
+    int seconds = (int)diff_seconds;
+    int minutes = seconds / 60;
+    int hours = minutes / 60;
     int days = hours / 24;
-    
-    if (days > 0) {
+    int years = days / 365;
+    int months = (days % 365) / 30;
+    int rem_days = (days % 365) % 30;
+    char buf[MAX_TIME_DIFF_LENGTH] = "";
+
+    if (years > 0) {
+        snprintf(buf, sizeof(buf), "%dy", years);
+    }
+    if (months > 0) {
+        size_t len = strlen(buf);
+        snprintf(buf + len, sizeof(buf) - len, "%dmo", months);
+    }
+    if (rem_days > 0 && years == 0) {
+        size_t len = strlen(buf);
+        snprintf(buf + len, sizeof(buf) - len, "%dd", rem_days);
+    }
+    if (days >= 1 && years == 0 && months == 0) {
         snprintf(release->time_difference, MAX_TIME_DIFF_LENGTH, "%dd ago", days);
-    } else {
+        return;
+    }
+    if (years > 0 || months > 0) {
+        size_t len = strlen(buf);
+        snprintf(buf + len, sizeof(buf) - len, " ago");
+        strncpy(release->time_difference, buf, MAX_TIME_DIFF_LENGTH);
+        return;
+    }
+    if (hours > 0) {
         snprintf(release->time_difference, MAX_TIME_DIFF_LENGTH, "%dh ago", hours);
+    } else if (minutes > 0) {
+        snprintf(release->time_difference, MAX_TIME_DIFF_LENGTH, "%dmin ago", minutes);
+    } else {
+        snprintf(release->time_difference, MAX_TIME_DIFF_LENGTH, "%ds ago", seconds);
     }
 }
 
@@ -405,7 +434,13 @@ void fetch_latest_release(RepoInfo* repo, ReleaseCollection* collection, const c
                    &tm.tm_hour, &tm.tm_min, &tm.tm_sec);
             tm.tm_year -= 1900;
             tm.tm_mon -= 1;
-            release.created_at = mktime(&tm);
+            // Use timegm to treat parsed time as UTC, not local time
+            #ifdef _WIN32
+            // Windows does not have timegm, so use _mkgmtime
+            release.created_at = _mkgmtime(&tm);
+            #else
+            release.created_at = timegm(&tm);
+            #endif
             free(created_at);
         }
         
