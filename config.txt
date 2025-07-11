@@ -24,3 +24,4 @@ max-niederman/ttyper
 BitEU/WinWhen
 BitEU/ascii-patrol
 BitEU/VVCard
+BitEU/GReleaseMon
