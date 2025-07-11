@@ -22,3 +22,5 @@ BitEU/PacMan
 BitEU/batch-chess
 max-niederman/ttyper
 BitEU/WinWhen
+BitEU/ascii-patrol
+BitEU/VVCard
